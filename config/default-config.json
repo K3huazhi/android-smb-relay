@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "smb": {
+    "enabled": true,
+    "port": 445,
+    "min_protocol": "SMB2_02",
+    "max_protocol": "SMB3_11",
+    "signing": "default",
+    "encryption": "off",
+    "guest_access": true,
+    "allow_anonymous": true,
+    "netbios_name": "ANDROID-SMB",
+    "workgroup": "WORKGROUP",
+    "interface": "auto",
+    "force_user": "root"
+  },
+  "webui": {
+    "enabled": true,
+    "port": 8080,
+    "bind": "0.0.0.0",
+    "auth": false,
+    "lan_only": true,
+    "session_hours": 12
+  },
+  "network": {
+    "interface": "auto",
+    "allow_cellular": false,
+    "settle_seconds": 5
+  },
+  "startup": {
+    "start_on_boot": true,
+    "start_webui_on_boot": true,
+    "wait_for_network": true,
+    "wait_for_storage": true,
+    "watchdog": true,
+    "watchdog_max_restarts": 5,
+    "watchdog_window_minutes": 10
+  },
+  "storage": {
+    "root": "/storage/emulated/0",
+    "auto_create": false,
+    "use_data_media": true
+  },
+  "log": {
+    "level": "info",
+    "max_size_kb": 512,
+    "max_files": 3
+  },
+  "shares": [
+    {
+      "id": "internal",
+      "name": "Internal",
+      "path": "/storage/emulated/0",
+      "comment": "完整内部存储（匿名读写）",
+      "read_only": false,
+      "guest_ok": true,
+      "hidden": false,
+      "enabled": true,
+      "upload_only": false
+    }
+  ],
+  "users": []
+}

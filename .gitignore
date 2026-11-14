@@ -1,0 +1,34 @@
+# Local/runtime files
+build/out/
+build/cache/
+.work/
+.chrome*/
+run/
+*.log
+*.pyc
+__pycache__/
+
+# Never commit phone secrets or local credentials
+secrets.json
+initial-credentials.txt
+windows-smb-account.txt
+*.secret
+*.token
+.env
+
+# Temporary agent/test files
+.asrd-*
+.asr-*
+.secrets*
+.current-*
+.initial-*
+.windows-account*
+.smbtest*
+.pw*
+.verify*
+.patch*
+.check*
+.shot-*
+.zh-*
+.force-*
+.cred

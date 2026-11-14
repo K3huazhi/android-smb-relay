@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+# Windows batch files must keep CRLF; PowerShell scripts are CRLF for 5.1.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets / release artifacts
+*.png binary
+*.zip binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+
+# Termux package list / lock are text data
+build/Packages-aarch64 text eol=lf
+build/termux-aarch64.lock text eol=lf

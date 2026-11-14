@@ -1,0 +1,22 @@
+#!/system/bin/sh
+# smbctl: root-only CLI wrapper around the asrd control socket.
+
+MODDIR=${0%/*}
+MODDIR=${MODDIR%/bin}
+DATA_DIR=${ASR_DATA_DIR:-/data/adb/android-smb-relay}
+
+if [ "$(id -u 2>/dev/null)" != "0" ]; then
+  echo "smbctl must run as root. Try: su -c '$(basename "$0") $*'" >&2
+  exit 1
+fi
+
+export ASR_DATA_DIR="$DATA_DIR"
+export ASR_MODULE_DIR="$MODDIR"
+
+if [ ! -S "$DATA_DIR/run/asr.sock" ]; then
+  if [ -x "$MODDIR/scripts/start.sh" ]; then
+    sh "$MODDIR/scripts/start.sh" >/dev/null 2>&1
+  fi
+fi
+
+exec "$MODDIR/bin/asrd" ctl "$@"

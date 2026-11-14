@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="referrer" content="no-referrer">
+  <title>Android SMB Relay · WebUI</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#page-root">跳到主要内容</a>
+
+  <div id="boot" class="boot" role="status">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>正在加载 WebUI…</span>
+  </div>
+
+  <!-- Sign-in view ------------------------------------------------------- -->
+  <div id="login-view" class="login-view" hidden>
+    <main class="login-card" aria-labelledby="login-title">
+      <div class="brand brand-login">
+        <span class="brand-mark" aria-hidden="true">AS</span>
+        <span class="brand-text">
+          <span class="brand-name">Android SMB Relay</span>
+          <span class="brand-sub">WebUI</span>
+        </span>
+      </div>
+      <h1 id="login-title" class="login-title">登录</h1>
+      <p id="login-sub" class="login-sub">以管理员身份访问 SMB 中继。</p>
+
+      <div id="login-notice" class="notice" role="alert" hidden></div>
+
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label for="login-username">用户名</label>
+          <input id="login-username" name="username" type="text" autocomplete="username"
+                 spellcheck="false" autocapitalize="off" required>
+        </div>
+        <div class="field">
+          <label for="login-password">密码</label>
+          <input id="login-password" name="password" type="password"
+                 autocomplete="current-password" required>
+        </div>
+        <div id="login-error" class="form-error" role="alert" hidden></div>
+        <button id="login-submit" class="btn btn-primary btn-block" type="submit">登录</button>
+      </form>
+
+      <form id="force-form" novalidate hidden>
+        <h1 class="login-title">首次登录：修改密码</h1>
+        <p class="login-sub">
+          初始密码为 <code>admin</code>。请设置至少 10 位的新密码，修改成功后才能进入 WebUI。
+        </p>
+        <div class="field">
+          <label for="force-new">新密码</label>
+          <input id="force-new" name="new-password" type="password"
+                 autocomplete="new-password" minlength="10" required>
+        </div>
+        <div class="field">
+          <label for="force-confirm">确认新密码</label>
+          <input id="force-confirm" name="confirm-password" type="password"
+                 autocomplete="new-password" minlength="10" required>
+        </div>
+        <div id="force-error" class="form-error" role="alert" hidden></div>
+        <button id="force-submit" class="btn btn-primary btn-block" type="submit">
+          修改密码并重新登录
+        </button>
+      </form>
+
+      <p class="login-foot">
+        会话 Cookie 为 HTTP-only。CSRF 令牌仅保存在内存中，页面刷新后需要重新获取。
+      </p>
+    </main>
+  </div>
+
+  <!-- Application shell --------------------------------------------------- -->
+  <div id="app-view" class="app-shell" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">AS</span>
+        <span class="brand-text">
+          <span class="brand-name">SMB Relay</span>
+          <span class="brand-sub">asrd WebUI</span>
+        </span>
+      </div>
+
+      <nav class="side-nav" aria-label="主导航">
+        <a class="nav-link" data-nav="dashboard" href="#/dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>
+          </svg>
+          <span>概览</span>
+        </a>
+        <a class="nav-link" data-nav="shares" href="#/shares">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+          <span>共享</span>
+        </a>
+        <a class="nav-link" data-nav="users" href="#/users">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span>用户</span>
+        </a>
+        <a class="nav-link" data-nav="network" href="#/network">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M3 12h18M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9z"/>
+          </svg>
+          <span>网络</span>
+        </a>
+        <a class="nav-link" data-nav="connect" href="#/connect">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 5"/>
+            <path d="M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19"/>
+          </svg>
+          <span>连接</span>
+        </a>
+        <a class="nav-link" data-nav="settings" href="#/settings">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 21v-6M4 11V3M12 21v-9M12 8V3M20 21v-4M20 13V3M1 15h6M9 8h6M17 17h6"/>
+          </svg>
+          <span>设置</span>
+        </a>
+        <a class="nav-link" data-nav="logs" href="#/logs">
+          <svg class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+               stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+               stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+          </svg>
+          <span>日志</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <span id="app-version" class="mono small muted">asrd</span>
+        <span class="small muted">静态界面，无外部依赖</span>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="page-title" class="page-title">概览</h1>
+          <p id="page-subtitle" class="page-subtitle" hidden></p>
+        </div>
+        <div class="topbar-actions">
+          <button id="unlock-btn" class="btn btn-warn btn-sm" type="button" hidden>解锁更改</button>
+          <span id="admin-user" class="user-chip mono" hidden></span>
+          <button id="logout-btn" class="btn btn-ghost btn-sm" type="button">退出登录</button>
+        </div>
+      </header>
+
+      <main id="page-root" class="page" tabindex="-1"></main>
+    </div>
+
+    <nav class="bottom-nav" aria-label="主导航">
+      <a class="bottom-link" data-nav="dashboard" href="#/dashboard">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>
+        </svg>
+        <span>概览</span>
+      </a>
+      <a class="bottom-link" data-nav="shares" href="#/shares">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        </svg>
+        <span>共享</span>
+      </a>
+      <a class="bottom-link" data-nav="users" href="#/users">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span>用户</span>
+      </a>
+      <a class="bottom-link" data-nav="network" href="#/network">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M3 12h18M12 3a15.3 15.3 0 0 1 4 9 15.3 15.3 0 0 1-4 9 15.3 15.3 0 0 1-4-9 15.3 15.3 0 0 1 4-9z"/>
+        </svg>
+        <span>网络</span>
+      </a>
+      <a class="bottom-link" data-nav="connect" href="#/connect">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 13a5 5 0 0 0 7.07 0l2.12-2.12a5 5 0 0 0-7.07-7.07L11 5"/>
+          <path d="M14 11a5 5 0 0 0-7.07 0L4.81 13.12a5 5 0 0 0 7.07 7.07L13 19"/>
+        </svg>
+        <span>连接</span>
+      </a>
+      <a class="bottom-link" data-nav="settings" href="#/settings">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 21v-6M4 11V3M12 21v-9M12 8V3M20 21v-4M20 13V3M1 15h6M9 8h6M17 17h6"/>
+        </svg>
+        <span>设置</span>
+      </a>
+      <a class="bottom-link" data-nav="logs" href="#/logs">
+        <svg class="nav-icon" viewBox="0 0 24 24" width="20" height="20" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+        </svg>
+        <span>日志</span>
+      </a>
+    </nav>
+  </div>
+
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+
+  <noscript>
+    <div class="noscript">此 WebUI 需要启用 JavaScript。</div>
+  </noscript>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
