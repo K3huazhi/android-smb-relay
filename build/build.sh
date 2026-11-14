@@ -57,12 +57,14 @@ echo "== building asrd ($GOARCH) =="
 
 echo "== staging module =="
 rm -rf "$STAGE"
-mkdir -p "$STAGE"/{bin,lib,scripts,config,webui}
+mkdir -p "$STAGE"/{bin,lib,libexec,scripts,config,webui,webroot}
 cp "$ROOT/module.prop" "$ROOT/customize.sh" "$ROOT/post-fs-data.sh" \
    "$ROOT/service.sh" "$ROOT/uninstall.sh" "$ROOT/action.sh" "$STAGE"/
 cp "$ROOT/config/default-config.json" "$STAGE/config/"
 cp -a "$ROOT/scripts/." "$STAGE/scripts/"
 cp -a "$ROOT/webui/." "$STAGE/webui/"
+# KernelSU module WebUI entry point (Module > WebUI).
+cp -a "$ROOT/webroot/." "$STAGE/webroot/"
 mkdir -p "$STAGE/webui/downloads"
 cp -a "$ROOT/tools/." "$STAGE/webui/downloads/"
 cp "$ROOT/bin/smbctl" "$STAGE/bin/smbctl"
@@ -74,9 +76,17 @@ rm -rf "$STAGE/lib"
 mkdir -p "$STAGE/lib"
 cp -a "$RELEASE_BUNDLE/lib/." "$STAGE/lib/"
 chmod 0755 "$STAGE"/bin/smbd "$STAGE"/bin/smbpasswd "$STAGE"/bin/smbcontrol "$STAGE"/bin/testparm
+# Named-pipe services (samba-dcerpcd and its rpcd_* helpers) live in libexec,
+# which is where smbd's patched LIBEXECDIR points.
+rm -rf "$STAGE/libexec"
+mkdir -p "$STAGE/libexec"
+if [ -d "$RELEASE_BUNDLE/libexec" ]; then
+  cp -a "$RELEASE_BUNDLE/libexec/." "$STAGE/libexec/"
+  find "$STAGE/libexec" -type f -exec chmod 0755 {} \;
+fi
 chmod 0755 "$STAGE"/*.sh "$STAGE"/scripts/*.sh
 find "$STAGE/lib" -type f -name '*.so*' -exec chmod 0755 {} \;
-find "$STAGE/webui" -type f -exec chmod 0644 {} \;
+find "$STAGE/webui" "$STAGE/webroot" -type f -exec chmod 0644 {} \;
 
 # Optional documentation in the zip; the repository is the authoritative copy.
 for f in README.md LICENSE; do
@@ -104,3 +114,24 @@ OUT="$ROOT/releases/android-smb-relay-$VERSION.zip"
 python3 "$BUILD/zip.py" "$STAGE" "$OUT"
 echo "== built $OUT =="
 ls -lh "$OUT"
+
+# Blocking checks: a zip that lacks the named-pipe helpers silently breaks every
+# Android client that enumerates shares over IPC$ (srvsvc) before mounting.
+python3 - "$OUT" <<'PY'
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+required = [
+    "bin/smbd",
+    "webroot/index.html",
+    "libexec/samba/samba-dcerpcd",
+    "libexec/samba/rpcd_classic",
+]
+missing = [n for n in required if n not in names]
+if missing:
+    raise SystemExit("missing from zip: " + ", ".join(missing))
+nested = [n for n in names if n.startswith("lib/lib/")]
+if nested:
+    raise SystemExit("nested lib/lib in zip: " + ", ".join(nested[:3]))
+print("payload ok: %d entries, libexec=%d" % (
+    len(names), len([n for n in names if n.startswith("libexec/")])))
+PY

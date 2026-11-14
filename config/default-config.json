@@ -25,7 +25,9 @@
   "network": {
     "interface": "auto",
     "allow_cellular": false,
-    "settle_seconds": 5
+    "settle_seconds": 5,
+    "trusted_ssids": [],
+    "untrusted_action": "readonly"
   },
   "startup": {
     "start_on_boot": true,

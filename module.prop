@@ -1,6 +1,6 @@
 id=android-smb-relay
 name=Android SMB Relay
-version=0.1.0
-versionCode=2026111401
+version=0.1.3
+versionCode=2026111503
 author=Android SMB Relay contributors
 description=Root SMB2/SMB3 LAN file relay with an authenticated WebUI. Samba smbd, no Android app required.

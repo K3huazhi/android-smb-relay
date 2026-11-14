@@ -664,6 +664,10 @@ code {
   font-size: 12.5px;
 }
 
+.stat-value.warn {
+  color: var(--yellow);
+}
+
 .stat-ips {
   display: flex;
   flex-direction: column;

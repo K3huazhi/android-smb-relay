@@ -7,8 +7,9 @@ DATA_DIR=/data/adb/android-smb-relay
 mkdir -p "$DATA_DIR/config" "$DATA_DIR/logs" "$DATA_DIR/run" "$DATA_DIR/samba" "$DATA_DIR/tmp" 2>/dev/null
 chmod 0700 "$DATA_DIR" "$DATA_DIR/config" "$DATA_DIR/logs" "$DATA_DIR/run" 2>/dev/null
 
-# Stable path for Samba's patched MODULESDIR.
+# Stable path for Samba's patched MODULESDIR and LIBEXECDIR.
 ln -sfn "$MODDIR/lib" "$DATA_DIR/lib"
+ln -sfn "$MODDIR/libexec" "$DATA_DIR/libexec"
 
 if [ ! -f "$DATA_DIR/config/config.json" ] && [ -f "$MODDIR/config/default-config.json" ]; then
   cp -f "$MODDIR/config/default-config.json" "$DATA_DIR/config/config.json"

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Android SMB Relay</title>
+<style>
+  :root {
+    --bg: #101014;
+    --card: #1b1b21;
+    --fg: #eceaf3;
+    --muted: #9a97a8;
+    --accent: #7aa2ff;
+    --ok: #4cc38a;
+    --warn: #e5a34a;
+    --bad: #e5675f;
+    --line: #2a2a33;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f6f8;
+      --card: #ffffff;
+      --fg: #16161a;
+      --muted: #6b6875;
+      --accent: #2f6bff;
+      --line: #e4e3ea;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.5 -apple-system, "Segoe UI", "Noto Sans SC", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  header { display: flex; align-items: center; gap: 10px; }
+  header .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--muted); flex: none;
+    box-shadow: 0 0 0 4px rgba(122, 162, 255, .12);
+  }
+  header .dot.ok { background: var(--ok); }
+  header .dot.warn { background: var(--warn); }
+  header .dot.bad { background: var(--bad); }
+  h1 { font-size: 17px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  #state { font-size: 15px; font-weight: 600; }
+  #detail { color: var(--muted); font-size: 13px; margin-top: 4px; word-break: break-all; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  button {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 14px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    min-height: 42px;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:active { opacity: .7; }
+  button[disabled] { opacity: .45; }
+  .hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+  code { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  #log {
+    margin: 0; padding: 10px;
+    background: rgba(127, 127, 127, .08);
+    border-radius: 10px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 38vh;
+    overflow: auto;
+    display: none;
+  }
+  footer { margin-top: auto; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>Android SMB Relay</h1>
+</header>
+
+<div class="card">
+  <div id="state">正在读取状态…</div>
+  <div id="detail"></div>
+  <div class="row" id="actions"></div>
+</div>
+
+<pre id="log"></pre>
+
+<footer>
+  通过 <code>ksu.exec</code> 读取模块状态；完整管理界面在 <code>asrd</code> 的 WebUI 上。
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var MOD = "/data/adb/modules/android-smb-relay";
+  var SOCK = "/data/adb/android-smb-relay/run/asr.sock";
+  var LOOPBACK = "http://127.0.0.1:8080/";
+
+  var el = {
+    dot: document.getElementById("dot"),
+    state: document.getElementById("state"),
+    detail: document.getElementById("detail"),
+    actions: document.getElementById("actions"),
+    log: document.getElementById("log")
+  };
+
+  function sh(cmd) {
+    try {
+      if (window.ksu && typeof window.ksu.exec === "function") {
+        return String(window.ksu.exec(cmd) || "");
+      }
+    } catch (e) {
+      appendLog("exec failed: " + e);
+    }
+    return "";
+  }
+
+  function appendLog(text) {
+    if (!text) return;
+    el.log.style.display = "block";
+    el.log.textContent = (el.log.textContent ? el.log.textContent + "\n" : "") + text.trim();
+  }
+
+  function socketUp() {
+    return sh("sh -c '[ -S " + SOCK + " ] && echo up || echo down'").indexOf("up") !== -1;
+  }
+
+  // Returns "local" when 8080 listens on 0.0.0.0/::/127.0.0.1, "lan" when the
+  // listener is bound to one specific LAN address, "" when nothing listens.
+  function webBind() {
+    var out = sh("sh -c \"grep -m1 ':1F90' /proc/net/tcp /proc/net/tcp6 2>/dev/null\"");
+    var m = out.match(/([0-9A-Fa-f]{8}):1F90/);
+    if (!m) return "";
+    var addr = m[1].toUpperCase();
+    return (addr === "00000000" || addr === "0100007F") ? "local" : "lan";
+  }
+
+  function lanIP() {
+    var out = sh("sh -c 'ip -4 addr show 2>/dev/null | grep \"inet \"'");
+    var lines = out.split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var m = lines[i].match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
+      if (m && m[1].indexOf("127.") !== 0) return m[1];
+    }
+    return "";
+  }
+
+  function setStatus(kind, text, detail) {
+    el.dot.className = "dot " + (kind || "");
+    el.state.textContent = text;
+    el.detail.textContent = detail || "";
+  }
+
+  function button(label, primary, onClick) {
+    var b = document.createElement("button");
+    b.textContent = label;
+    if (primary) b.className = "primary";
+    b.addEventListener("click", function () {
+      b.disabled = true;
+      try { onClick(); } finally { setTimeout(function () { b.disabled = false; }, 900); }
+    });
+    return b;
+  }
+
+  function openBrowser(url) {
+    sh("sh -c 'am start -a android.intent.action.VIEW -d " + url + " >/dev/null 2>&1'");
+  }
+
+  function render() {
+    var up = socketUp();
+    var bind = up ? webBind() : "";
+    var ip = lanIP();
+    var lanURL = ip ? "http://" + ip + ":8080/" : "";
+    var url = (bind === "lan" && lanURL) ? lanURL : LOOPBACK;
+    var listening = !!bind;
+    var actions = [];
+
+    if (!up) {
+      setStatus("bad", "服务未运行", "daemon socket 不存在：" + SOCK);
+      actions.push(button("启动服务", true, function () {
+        appendLog(sh("sh " + MOD + "/scripts/start.sh 2>&1"));
+        setTimeout(render, 1200);
+      }));
+      actions.push(button("刷新", false, render));
+    } else if (!listening) {
+      setStatus("warn", "WebUI 未监听 8080", "SMB 可能仍在运行，只是 HTTP 监听关闭了。");
+      actions.push(button("启动 WebUI", true, function () {
+        appendLog(sh(MOD + "/bin/smbctl webui-start 2>&1"));
+        setTimeout(render, 1200);
+      }));
+      actions.push(button("刷新", false, render));
+    } else {
+      setStatus("ok", "服务运行中", lanURL ? "局域网地址：" + lanURL : "WebUI 已监听 8080");
+      actions.push(button("打开 WebUI", true, function () { location.replace(url); }));
+      if (lanURL) {
+        actions.push(button("用浏览器打开", false, function () { openBrowser(lanURL); }));
+      }
+      actions.push(button("刷新", false, render));
+    }
+
+    el.actions.textContent = "";
+    actions.forEach(function (b) { el.actions.appendChild(b); });
+
+    if (listening) {
+      setTimeout(function () { location.replace(url); }, 60);
+    }
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

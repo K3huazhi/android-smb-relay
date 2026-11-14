@@ -23,6 +23,7 @@ type ServiceStatus struct {
 	Interface string    `json:"interface"`
 	IP        string    `json:"ip"`
 	Port      int       `json:"port"`
+	ReadOnly  bool      `json:"read_only"`
 	UptimeS   int64     `json:"uptime_s"`
 }
 
@@ -66,19 +67,20 @@ type Daemon struct {
 	sys       *SysMonitor
 	startTime time.Time
 
-	mu          sync.RWMutex
-	cfg         *Config
-	bootMode    bool
-	net         NetworkInfo
-	smb         ServiceStatus
-	web         *WebUIServer
-	userStopped bool
-	expectExit  bool
-	lastIface   string
-	lastIP      string
-	lastStorage string
-	restarts    []time.Time
-	opMu        sync.Mutex
+	mu           sync.RWMutex
+	cfg          *Config
+	bootMode     bool
+	net          NetworkInfo
+	smb          ServiceStatus
+	web          *WebUIServer
+	userStopped  bool
+	expectExit   bool
+	lastIface    string
+	lastIP       string
+	lastStorage  string
+	lastReadOnly bool
+	restarts     []time.Time
+	opMu         sync.Mutex
 
 	wake       chan struct{}
 	exitEvents chan error
@@ -317,6 +319,24 @@ func (d *Daemon) reconcile() {
 		return
 	}
 
+	// Exposure policy: an untrusted Wi-Fi may stop the service or force every
+	// share read-only. This runs before storage checks so a hostile network is
+	// shut down even while the phone is still locked.
+	readOnly := info.Policy == "readonly"
+	if info.Policy == "stop" {
+		if running {
+			d.stopSMB(false)
+			running = false
+		}
+		d.mu.Lock()
+		d.smb.PID = 0
+		d.smb.ReadOnly = false
+		d.lastReadOnly = false
+		d.mu.Unlock()
+		d.setState("untrusted_network", info.PolicyNote)
+		return
+	}
+
 	storagePath := RuntimePath(cfg, cfg.Storage.Root)
 	if cfg.Startup.WaitForStorage && !storageUsable(storagePath) {
 		if running {
@@ -333,7 +353,7 @@ func (d *Daemon) reconcile() {
 	storageFP := StorageFingerprint(cfg)
 	if running {
 		d.mu.RLock()
-		iface, ip := d.lastIface, d.lastIP
+		iface, ip, lastRO := d.lastIface, d.lastIP, d.lastReadOnly
 		d.mu.RUnlock()
 		if iface != info.Selected || ip != info.IPv4 {
 			d.log.Infof("smb", "network changed %s/%s -> %s/%s, restarting smbd", iface, ip, info.Selected, info.IPv4)
@@ -345,6 +365,12 @@ func (d *Daemon) reconcile() {
 			d.mu.RUnlock()
 			if lastStorage != "" && lastStorage != storageFP {
 				d.log.Infof("smb", "storage mapping changed, restarting smbd")
+				d.stopSMB(false)
+				running = false
+			} else if lastRO != readOnly {
+				// Share options are read when a client connects, so a SIGHUP
+				// would leave existing sessions writable; restart instead.
+				d.log.Infof("smb", "exposure policy changed (read_only=%v, note=%q), restarting smbd", readOnly, info.PolicyNote)
 				d.stopSMB(false)
 				running = false
 			}
@@ -360,7 +386,11 @@ func (d *Daemon) reconcile() {
 	if state == "failed" {
 		return
 	}
-	d.startSMB(cfg, info)
+	d.startSMB(effectiveConfig(cfg, readOnly), info)
+	d.mu.Lock()
+	d.lastReadOnly = readOnly
+	d.smb.ReadOnly = readOnly
+	d.mu.Unlock()
 }
 
 func (d *Daemon) startSMB(cfg *Config, info NetworkInfo) {
@@ -617,6 +647,20 @@ func (d *Daemon) WebUIStatus() WebUIStatus {
 
 // Status builds a consistent snapshot for the API. It is called frequently
 // (every 2s by the UI), so all work here is bounded and cheap.
+// effectiveConfig returns cfg unchanged, or a clone whose shares are all
+// read-only when the exposure policy demands it. The stored config is never
+// modified, so leaving the untrusted network restores write access.
+func effectiveConfig(cfg *Config, readOnly bool) *Config {
+	if !readOnly {
+		return cfg
+	}
+	out := cfg.clone()
+	for i := range out.Shares {
+		out.Shares[i].ReadOnly = true
+	}
+	return out
+}
+
 func (d *Daemon) Status() Status {
 	cfg := d.Config()
 	info := d.Network()
@@ -717,6 +761,9 @@ func (d *Daemon) warnings(cfg *Config, info NetworkInfo, userStopped bool) []str
 	if cfg.SMB.Encryption == "off" {
 		out = append(out, "SMB 传输加密已关闭")
 	}
+	if len(cfg.Network.TrustedSSIDs) > 0 && info.PolicyNote != "" {
+		out = append(out, info.PolicyNote)
+	}
 	return out
 }
 
@@ -744,8 +791,9 @@ func (d *Daemon) UpdateConfig(mutate func(*Config) error) error {
 	d.mu.Lock()
 	d.cfg = next
 	web := d.web
+	readOnly := d.lastReadOnly
 	d.mu.Unlock()
-	d.samba.cfg = next
+	d.samba.cfg = effectiveConfig(next, readOnly)
 	d.opMu.Unlock()
 	d.log.Infof("config", "configuration updated")
 
@@ -778,6 +826,9 @@ func (d *Daemon) UpdateConfig(mutate func(*Config) error) error {
 			d.trigger()
 		}
 	}
+	// Re-evaluate the exposure policy even when nothing needed a restart: a
+	// new trusted list applies on the next reconcile.
+	d.trigger()
 	return nil
 }
 
@@ -933,7 +984,16 @@ func (d *Daemon) logTail(source string, limit int, level string) ([]string, erro
 	case "asrd", "webui", "daemon":
 		return readLogTail(filepath.Join(d.dataDir, "logs", "asrd.log"), limit, level)
 	case "smbd":
-		return readLogTail(filepath.Join(d.dataDir, "logs", "smbd.log"), limit, level)
+		path := filepath.Join(d.dataDir, "logs", "smbd.log")
+		if _, err := os.Stat(path); err != nil {
+			// Builds that passed "smbd -l <logs>" made Samba write
+			// <logs>/log.smbd and skip "log file"; still show it.
+			alt := filepath.Join(d.dataDir, "logs", "log.smbd")
+			if _, altErr := os.Stat(alt); altErr == nil {
+				path = alt
+			}
+		}
+		return readLogTail(path, limit, level)
 	case "console":
 		return readLogTail(filepath.Join(d.dataDir, "logs", "smbd-console.log"), limit, level)
 	}

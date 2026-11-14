@@ -203,6 +203,7 @@ const SMB_STATES = {
   restarting: { label: '重启中', kind: 'warn' },
   waiting_network: { label: '等待网络', kind: 'warn' },
   waiting_storage: { label: '等待存储', kind: 'warn' },
+  untrusted_network: { label: '不可信网络', kind: 'danger' },
   stopped: { label: '已停止', kind: 'idle' },
   failed: { label: '失败', kind: 'danger' },
 };

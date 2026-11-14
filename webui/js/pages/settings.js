@@ -310,6 +310,46 @@ export async function mount(root, ctx) {
       ),
     );
 
+    /* Trusted Wi-Fi ------------------------------------------------------ */
+    const netCfg = cfg.network || {};
+    const trustedList = Array.isArray(netCfg.trusted_ssids) ? netCfg.trusted_ssids : [];
+    f.trustedSSIDs = textField({
+      id: 'net-trusted-ssids',
+      label: '可信 Wi-Fi（SSID）',
+      value: trustedList.join(', '),
+      hint: '逗号分隔，区分大小写。留空表示不启用；填入后，只有这些网络允许完整访问。',
+    });
+    f.untrustedAction = selectField({
+      id: 'net-untrusted-action',
+      label: '不在名单时',
+      options: [
+        { value: 'readonly', label: '只读（推荐）' },
+        { value: 'stop', label: '停止 SMB' },
+        { value: 'allow', label: '仍然允许（不防护）' },
+      ],
+      value: netCfg.untrusted_action || 'readonly',
+      hint: '需要能读到当前 Wi-Fi 名称；读不到时按可信处理并在警告里提示。',
+    });
+    const currentSSID = (net && net.ssid) || '';
+    const trustedSection = section(
+      '可信网络',
+      '防止在陌生 Wi-Fi 上把整个内部存储暴露出去。',
+      el(
+        'div',
+        { class: 'form-grid' },
+        f.trustedSSIDs.wrap,
+        f.untrustedAction.wrap,
+      ),
+      currentSSID
+        ? el('p', {
+            class: 'muted small',
+            text: `当前 Wi-Fi：${currentSSID}（${
+              net.trusted ? '在可信列表或未启用白名单' : '不在可信列表'
+            }）`,
+          })
+        : null,
+    );
+
     /* WebUI -------------------------------------------------------------- */
     f.webuiEnabled = checkField({
       id: 'webui-enabled',
@@ -563,6 +603,7 @@ export async function mount(root, ctx) {
         'div',
         { class: 'settings-grid' },
         smbSection,
+        trustedSection,
         webuiSection,
         startupSection,
         storageSection,
@@ -652,6 +693,11 @@ export async function mount(root, ctx) {
           cfg.network && Number.isFinite(Number(cfg.network.settle_seconds))
             ? Number(cfg.network.settle_seconds)
             : 5,
+        trusted_ssids: f.trustedSSIDs.input.value
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        untrusted_action: f.untrustedAction.input.value || 'readonly',
       },
       startup: {
         start_on_boot: f.startOnBoot.input.checked,

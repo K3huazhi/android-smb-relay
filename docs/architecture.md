@@ -116,6 +116,7 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 | `waiting_network` | 没有可用的 LAN IPv4 接口 |
 | `waiting_storage` | 存储（共享根）不可用 |
 | `restarting` | `smbd` 异常退出后在退避等待 |
+| `untrusted_network` | 当前 Wi-Fi 不在 `network.trusted_ssids` 且策略为 `stop`；换回可信网络后自动恢复 |
 | `failed` | 达到重启上限或被禁用 watchdog 后放弃；不会自动重试。需要用户 Start/Restart/Reload（`Reload` 在未运行时等价 `Start`）或先恢复运行状态再改配置来清除。 |
 
 ```text
@@ -165,8 +166,9 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 
 ### 7.1 内层：`asrd` 监督 `smbd`
 
-- `smbd` 以守护模式启动：`smbd -D -s <data>/samba/smb.conf -l <data>/logs`。
+- `smbd` 以守护模式启动：`smbd -D -s <data>/samba/smb.conf`。
   - 选择 `-D` 而不是 `-F` 的原因：Termux/Android 上 `-F` 在前台模式下遇到第一个连接时可能因地址解析问题退出；daemon 模式 fork 出的 worker 能正常处理连接（源码注释记录）。
+  - **不传 `-l`**：Samba 把 `-l` 当 log basename，会把日志写成 `<dir>/log.smbd` 并忽略 `log file`；不传时 smb.conf 里的 `log file = <data>/logs/smbd.log` 生效，WebUI 才能读到。
 - 启动后最多 3 s 等待 `smbd.pid` 出现且进程存活；失败则扫描 `/proc/*/cmdline`（包含 `smbd` 与本配置文件路径）作为兜底。
 - 每秒检查一次 master PID；`Wait()` 返回后向 `exitEvents` 发送退出事件。
 - 非预期退出：记日志、清理残留、记录一次 restart、按退避重启：
@@ -237,7 +239,17 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 - `reconcile` 检测到选中接口或 IPv4 变化时重启 `smbd`：代码不假设 Samba 会自动跟随接口地址变化（Samba 在启动时解析 `interfaces` 并建监听；是否自动重建未在本项目单独验证）。
 - 注意：去抖参数在 daemon 启动时读取并保存在 watcher 中，**运行时修改 `network.settle_seconds` 需要重启 `asrd` 才生效**。
 
-### 8.4 WebUI 的 LAN-only
+### 8.4 可信 Wi-Fi 白名单（`network.trusted_ssids`）
+
+- 目的：默认共享是「匿名 + 整盘可写」，出门连上陌生 Wi-Fi 时会直接暴露 `/storage/emulated/0`。
+- 配置：`trusted_ssids`（SSID 精确匹配、区分大小写、最多 32 条）+ `untrusted_action`（`readonly` 默认 / `stop` / `allow`）。
+- SSID 读取：`cmd wifi status` 的 `Wifi is connected to "X"` 或 `WifiInfo: SSID: "X"`，由 root 身份执行，结果缓存 10 s，只对选中接口为 `wifi` 时读取。
+- 判定顺序：白名单为空 → 不启用；非 Wi-Fi（以太网/USB）→ 允许并注明跳过；读不到 SSID → 允许（fail-open）并写入 warnings；SSID 不在名单 → 按 `untrusted_action` 处理。
+- `readonly` 的实现是不改存储的配置克隆：`effectiveConfig()` 把启用共享全部置为 `read_only = yes` 再渲染 `smb.conf`，所以离开不可信网络会恢复读写。
+- 策略变化**重启** `smbd` 而不是 SIGHUP：Samba 的共享参数在客户端连接时读取，重载不会影响已建立会话。
+- SSID 变化会进入 `NetworkWatcher` 的指纹（`selected|ipv4|ipv6|ssid|policy`），因此切换网络会自动触发 `reconcile`。
+
+### 8.5 WebUI 的 LAN-only
 
 - `lanGuard` 对**所有**路径（静态页也包含）检查 TCP 对端地址；`webui.lan_only=true` 时只允许私有地址：
   - IPv4：`10/8`、`172.16/12`、`192.168/16`、loopback、link-local；
@@ -303,7 +315,7 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 
 | 操作 | 实现 |
 |---|---|
-| 启动 | 写配置 → 删除旧 pid → 打开 `smbd-console.log` 轮转 writer → `exec.Command(bin/smbd, "-D", "-s", conf, "-l", logs)`，设置 `SysProcAttr{Setpgid:true}`、工作目录=数据目录、受限环境变量 → `cmd.Run()`（daemon 立即返回）→ 等 pid 文件/扫描 `/proc` |
+| 启动 | 写配置 → 删除旧 pid → 打开 `smbd-console.log` 轮转 writer → `exec.Command(bin/smbd, "-D", "-s", conf)`，设置 `SysProcAttr{Setpgid:true}`、工作目录=数据目录、受限环境变量 → `cmd.Run()`（daemon 立即返回）→ 等 pid 文件/扫描 `/proc` |
 | 环境 | `PATH=<module>/bin:/system/bin:/system/xbin`；`LD_LIBRARY_PATH=<module>/lib:<module>/lib/samba`；`TMPDIR=<data>/tmp`；`HOME=<data>`；`ANDROID_DATA=/data`；`ANDROID_ROOT=/system`；`LANG=C.UTF-8` |
 | 监控 | 1 s 轮询 master PID；退出后发送事件 |
 | 重载 | `SIGHUP`（Samba 会重新读配置，不丢弃已建立会话） |
@@ -314,6 +326,8 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 进程模型：`smbd` 是“每客户端一个子进程”的模型；`max smbd processes = 64` 限制并发。`Stop` 会清理 master 与启动时捕获的 children。
 
 ## 12. WebUI / HTTP 层
+
+除浏览器的 `http://<ip>:8080` 外，模块还提供 KernelSU 模块页入口：`webroot/index.html`（KernelSU 用 `WebViewAssetLoader` 加载，并注入 `ksu.exec()` root shell）。该页面本身不是完整前端，只通过 `ksu.exec` 判断 `run/asr.sock` 是否存在、`/proc/net/tcp{,6}` 是否监听 `1F90`（8080），据此显示“启动服务/启动 WebUI”按钮；服务正常时 `location.replace` 到 `http://127.0.0.1:8080/`，在同一个 WebView 里加载真正的 WebUI（同源，cookie/CSRF 与浏览器访问完全一致）。
 
 - `WebUIServer` 由 `Daemon` 持有；`Apply(cfg)` 在配置未变化时直接返回（避免对同一 bind/port 重复 `net.Listen`）；需要重建时先尝试新监听，失败则记录 `lastErr` 并返回错误（旧 listener 保持运行）；成功后切换并关闭旧 listener。
 - `Daemon.StartWebUI()` / `StopWebUI()` 可在不影响 `smbd` 的情况下启停 HTTP 监听（`ctl webui-start|webui-stop`）。
@@ -381,6 +395,8 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 ├── customize.sh / post-fs-data.sh / service.sh / uninstall.sh / action.sh
 ├── bin/        asrd, smbctl, smbd, smbpasswd, smbcontrol, testparm
 ├── lib/        Samba 依赖库（117 个根库 + lib/samba 下 153 个插件）
+├── libexec/    samba-dcerpcd 与 rpcd_* 命名管道服务（IPC$ 必需）
+├── webroot/    KernelSU 模块页入口（index.html）
 ├── scripts/    start.sh stop.sh restart.sh status.sh network.sh watchdog.sh
 ├── config/     default-config.json
 └── webui/      index.html css/ js/
@@ -410,11 +426,12 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 │   └── ...
 ├── tmp/
 ├── var/log/samba/
-└── lib -> /data/adb/modules/android-smb-relay/lib   # 稳定符号链接
+├── lib -> /data/adb/modules/android-smb-relay/lib          # 稳定符号链接
+└── libexec -> /data/adb/modules/android-smb-relay/libexec  # 稳定符号链接
 ```
 
 - 模块文件由安装器/`customize.sh` 设为 `0755`/`0644`；数据目录 `0700`；配置与凭据 `0600`。
-- `data/lib` 符号链接用于 Samba 编译期 `MODULESDIR`（被 patch 为 `/data/adb/android-smb-relay`）下的插件加载；升级替换模块目录后会重新指向新目录。
+- `data/lib` 与 `data/libexec` 两个符号链接分别对应 Samba 编译期的 `MODULESDIR` 和 `LIBEXECDIR`（都被 patch 为 `/data/adb/android-smb-relay`）；升级替换模块目录后会重新指向新目录。
 
 ## 16. 模块升级与卸载
 
@@ -507,4 +524,15 @@ asrd ──写日志──► data/logs/asrd.log（轮转）
 5. **`/storage` 未解锁时误把空挂载点当可用存储**
    - 现象：用户解锁前 `/storage/emulated/0` 可能已存在但只是空挂载点；直接 `stat`/列目录会判断“可用”，导致 Samba 在错误路径上启动或共享为空。
    - 修复：`isFuseMount()` 用 `statfs` 的 `f_type == FUSE super magic (0x65735546)` 判断 FUSE 是否真正挂载；不可用时 `RuntimePath()` 回退到 `/data/media/0`，解锁后再由 `StorageFingerprint` 变化触发 `smbd` 重启。
+
+6. **打包漏掉 `libexec/samba/`，安卓客户端挂载报 `0xC000020C`**
+   - 现象：MT 管理器等客户端挂载 `\\<IP>\Internal` 时报 `SMB2_CREATE ... STATUS_CONNECTION_DISCONNECTED (0xC000020C)`；Samba 日志对应 `smbd_smb2_request_error_ex: ... status[NT_STATUS_CONNECTION_DISCONNECTED] || at smb2_create.c:393`。`smbclient` 等只走数据共享的客户端不受影响，能正常列目录。
+   - 原因：Samba ≥ 4.15 的命名管道全部由 `samba-dcerpcd` 提供，`smbd` 从编译期 `LIBEXECDIR`（patch 后为 `<data>/libexec/samba`）`posix_spawn` 它。`bundle.py` 只打包了 `bin/` 与 `lib/`，该目录不存在；bionic 的 `posix_spawn` 不向父进程报告 exec 失败，子进程直接退出，`smbd` 读 ready 管道得到 `EPIPE`，而 `EPIPE` 在 `libcli/util/errmap_unix.c` 里映射成 `NT_STATUS_CONNECTION_DISCONNECTED`。
+   - 影响面：客户端只要先通过 `srvsvc`（IPC$）枚举共享就会挂掉——包括 MT 管理器、资源管理器一类“先列共享再挂载”的实现。
+   - 修复：`bundle.py` 的 NEEDED 闭包加入 `samba-dcerpcd` + `rpcd_*`，输出 `libexec/samba/`；`build.sh` staging 复制并 `0755`；`post-fs-data.sh`/`customize.sh` 建立 `data/libexec` 稳定符号链接；`uninstall.sh` 清理该链接。用同一份 Termux 4.25.1 二进制在本地验证：移走 `libexec` 复现 `0xC000020C @ smb2_create.c:393`，放回后 `srvsvc` 管道打开成功。
+
+7. **`smbd -l` 让日志写到 `log.smbd`，WebUI 永远读不到**
+   - 现象：`/api/logs?source=smbd` 一直返回 `open .../logs/smbd.log: no such file or directory`，即使已有真实连接；实际文件是 `<logs>/log.smbd`。
+   - 原因：Samba 的 `-l` 是 log basename，传目录后日志写成 `<dir>/log.smbd`，并忽略 smb.conf 里的绝对 `log file`。
+   - 修复：`SambaManager.Start` 不再传 `-l`（`log file = <data>/logs/smbd.log` 生效）；`logTail` 在 `smbd.log` 不存在时回退读 `log.smbd`，兼容旧版本产生的日志。
 

@@ -27,7 +27,7 @@ fi
 
 rm -f "$DATA_DIR/run/asr.sock" "$DATA_DIR/run/asrd.pid" "$DATA_DIR/run/watchdog.disabled" 2>/dev/null
 rm -rf "$DATA_DIR/samba/pid" "$DATA_DIR/samba/lock" "$DATA_DIR/samba/cache" "$DATA_DIR/samba/ncalrpc" "$DATA_DIR/tmp" 2>/dev/null
-rm -f "$DATA_DIR/lib" 2>/dev/null
+rm -f "$DATA_DIR/lib" "$DATA_DIR/libexec" 2>/dev/null
 
 # Configuration, logs and the initial credentials are intentionally kept so a
 # reinstall can recover them. They contain no user share data.

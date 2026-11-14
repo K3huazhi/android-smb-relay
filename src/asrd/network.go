@@ -34,6 +34,15 @@ type NetworkInfo struct {
 	DNS        []string        `json:"dns"`
 	Ready      bool            `json:"ready"`
 	Message    string          `json:"message"`
+
+	// Exposure policy (network.trusted_ssids): the Wi-Fi name is only read for
+	// the selected interface, and only when a trusted list is configured.
+	WiFi       bool   `json:"wifi"`
+	SSID       string `json:"ssid"`
+	SSIDSource string `json:"ssid_source,omitempty"`
+	Trusted    bool   `json:"trusted"`
+	Policy     string `json:"policy"`
+	PolicyNote string `json:"policy_note,omitempty"`
 }
 
 func detectNetwork(cfg *Config) NetworkInfo {
@@ -78,6 +87,7 @@ func detectNetwork(cfg *Config) NetworkInfo {
 	for _, ii := range info.Interfaces {
 		if ii.Name == selected {
 			info.Selected = ii.Name
+			info.WiFi = ii.Type == "wifi"
 			if len(ii.IPv4) > 0 {
 				info.IPv4 = ii.IPv4[0]
 				info.Ready = true
@@ -90,6 +100,10 @@ func detectNetwork(cfg *Config) NetworkInfo {
 	if info.Ready {
 		info.DNS = readDNS()
 	}
+	if info.WiFi && len(cfg.Network.TrustedSSIDs) > 0 {
+		info.SSID, info.SSIDSource = currentSSID()
+	}
+	info.Policy, info.PolicyNote, info.Trusted = exposurePolicy(cfg, info)
 	return info
 }
 
@@ -346,7 +360,8 @@ func fingerprint(info NetworkInfo) string {
 	if info.Selected == "" {
 		return "none"
 	}
-	return info.Selected + "|" + info.IPv4 + "|" + strings.Join(info.IPv6, ",")
+	return info.Selected + "|" + info.IPv4 + "|" + strings.Join(info.IPv6, ",") +
+		"|" + info.SSID + "|" + info.Policy
 }
 
 func (w *NetworkWatcher) Start() {

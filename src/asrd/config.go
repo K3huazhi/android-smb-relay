@@ -62,6 +62,13 @@ type NetConfig struct {
 	Interface     string `json:"interface"`
 	AllowCellular bool   `json:"allow_cellular"`
 	SettleSeconds int    `json:"settle_seconds"`
+
+	// TrustedSSIDs is an allow-list of Wi-Fi networks (exact, case-sensitive
+	// SSID match). Empty means the policy is off and every network is allowed.
+	TrustedSSIDs []string `json:"trusted_ssids"`
+	// UntrustedAction decides what happens when the selected Wi-Fi is not in
+	// TrustedSSIDs: "readonly" (default), "stop" or "allow".
+	UntrustedAction string `json:"untrusted_action"`
 }
 
 type Startup struct {
@@ -140,7 +147,7 @@ func defaultConfig() *Config {
 			LANOnly:      true,
 			SessionHours: 12,
 		},
-		Network: NetConfig{Interface: "auto", AllowCellular: false, SettleSeconds: 5},
+		Network: NetConfig{Interface: "auto", AllowCellular: false, SettleSeconds: 5, UntrustedAction: "readonly"},
 		Startup: Startup{
 			StartOnBoot:         true,
 			StartWebUIOnBoot:    true,
@@ -209,6 +216,13 @@ func (c *Config) normalize() {
 	if c.Network.SettleSeconds <= 0 {
 		c.Network.SettleSeconds = 5
 	}
+	c.Network.UntrustedAction = strings.ToLower(strings.TrimSpace(c.Network.UntrustedAction))
+	switch c.Network.UntrustedAction {
+	case "allow", "readonly", "stop":
+	default:
+		c.Network.UntrustedAction = "readonly"
+	}
+	c.Network.TrustedSSIDs = normalizeSSIDList(c.Network.TrustedSSIDs)
 	if c.Startup.WatchdogMaxRestarts <= 0 {
 		c.Startup.WatchdogMaxRestarts = 5
 	}
@@ -298,6 +312,19 @@ func (c *Config) Validate() error {
 	}
 	if c.Network.SettleSeconds < 0 || c.Network.SettleSeconds > 120 {
 		return fmt.Errorf("network.settle_seconds must be 0..120")
+	}
+	switch c.Network.UntrustedAction {
+	case "allow", "readonly", "stop":
+	default:
+		return fmt.Errorf("network.untrusted_action must be allow, readonly or stop")
+	}
+	if len(c.Network.TrustedSSIDs) > maxTrustedSSIDs {
+		return fmt.Errorf("network.trusted_ssids must have at most %d entries", maxTrustedSSIDs)
+	}
+	for _, ssid := range c.Network.TrustedSSIDs {
+		if len(ssid) > maxSSIDLen {
+			return fmt.Errorf("network.trusted_ssids entry too long (max %d)", maxSSIDLen)
+		}
 	}
 	switch {
 	case c.WebUI.Bind == "0.0.0.0", c.WebUI.Bind == "::", c.WebUI.Bind == "127.0.0.1", c.WebUI.Bind == "::1":

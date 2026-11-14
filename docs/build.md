@@ -18,7 +18,7 @@ bash build/build.sh
 1. 检查 `ARCH=arm64`、Go、Python 3、`dpkg-deb`、`readelf`；
 2. 若 `build/cache/debs/aarch64/samba_4.25.1-1_aarch64.deb` 不存在，调用 `fetch-termux.py` 下载依赖闭包；
 3. `verify-lock.py` 校验缓存 `.deb` 的 SHA-256；
-4. `bundle.py` 解包并计算 `smbd/smbpasswd/smbcontrol/testparm` 的 NEEDED 闭包；
+4. `bundle.py` 解包并计算 `smbd/smbpasswd/smbcontrol/testparm` 及 `libexec/samba/{samba-dcerpcd,rpcd_*}` 的 NEEDED 闭包；
 5. `patch-prefix.py` 把编译期 Termux 前缀重写为 `/data/adb/android-smb-relay`；
 6. 交叉编译 `asrd`；
 7. 组装 `build/out/module/`（模块根），加入 `LICENSE`、`README.md`、`docs/third-party.md`；
@@ -31,7 +31,7 @@ bash build/build.sh
 | `build/build.sh` | 总入口；检查环境、串起所有步骤、组装 staging、打包 |
 | `build/fetch-termux.py` | 从 Termux 包索引解析 `samba`（以及 `zstd`）的依赖闭包，下载 `.deb`，把**实际下载文件**的 SHA-256 写入 `build/cache/debs/<arch>/PACKAGES.txt` |
 | `build/verify-lock.py` | 逐行校验 `PACKAGES.txt` 中的 SHA-256；失败即退出非 0 |
-| `build/bundle.py` | `dpkg-deb -x` 解包、按 `readelf -d` 的 NEEDED 递归收集库、复制 `lib/samba/**` 插件树、写 `MISSING.txt` |
+| `build/bundle.py` | `dpkg-deb -x` 解包、按 `readelf -d` 的 NEEDED 递归收集库、复制 `lib/samba/**` 插件树与 `libexec/samba/**` 命名管道服务、写 `MISSING.txt` |
 | `build/patch-prefix.py` | 在 ELF 内嵌 C 字符串中把 `/data/data/com.termux/files/usr` 替换为 `/data/adb/android-smb-relay`（新前缀不长于旧前缀才可原地替换，NUL 填充） |
 | `build/zip.py` | 固定时间戳（2026-01-01）、排序条目、按可执行位设置 zip mode，输出字节级尽量可复现的 zip |
 | `build/termux-aarch64.lock` | 人类可读的锁摘要（当前 41 行：包名/版本/pool 路径/SHA-256/OK），供审计参考；`build.sh` 实际使用的是 `build/cache/debs/aarch64/PACKAGES.txt`（同样 41 行） |
@@ -53,14 +53,16 @@ build/
     └── module/                                   # 模块 staging（zip 根层）
 ```
 
-`build/out/module/` 的内容就是 zip 的根：`module.prop`、`bin/`、`lib/`、`scripts/`、`config/`、`webui/`、`*.sh`，以及（构建时加入的）`LICENSE`、`README.md`、`docs/third-party.md`。
+`build/out/module/` 的内容就是 zip 的根：`module.prop`、`bin/`、`lib/`、`libexec/`、`webroot/`、`scripts/`、`config/`、`webui/`、`*.sh`，以及（构建时加入的）`LICENSE`、`README.md`、`docs/third-party.md`。
 
-### 1.4 0.1.0 产物观测值
+### 1.4 0.1.3 产物观测值
 
 用于核对（不是校验和）：
 
-- `releases/android-smb-relay-0.1.0.zip`：**319 个条目**，约 **38.1 MB**（最终包大小以 `ls -l` 为准）。
-- `lib/` 根目录 **117 个 `.so*`**；`lib/samba/` 下 **153 个插件库**（`lib/samba/` 含目录共 160 个条目）。
+- `releases/android-smb-relay-0.1.3.zip`：**349 个条目**，约 **36 MB**（最终包大小以 `ls -l` 为准）。
+- `lib/` 根目录 **124 个 `.so*`**；`lib/samba/` 下 **153 个插件库**（`lib/samba/` 含目录共 160 个条目）。
+- `webroot/index.html` 为 KernelSU 模块页入口（仅 1 个文件，权限 0644）。
+- `libexec/samba/` **8 个可执行文件**：`samba-dcerpcd`、`rpcd_classic`、`rpcd_epmapper`、`rpcd_fsrvp`、`rpcd_lsad`、`rpcd_mdssvc`、`rpcd_spoolss`、`rpcd_winreg`。缺这些文件时安卓客户端挂载会在 IPC$ 枚举阶段报 `0xC000020C`。
 - `bin/` 6 个文件：`asrd`、`smbctl`、`smbd`、`smbpasswd`、`smbcontrol`、`testparm`。
 - zip 内含 `LICENSE`、`README.md`、`docs/third-party.md`。
 - `lib/lib/` **必须为 0**（见 §4.1 的阻断校验）。
@@ -148,7 +150,7 @@ python3 build/bundle.py aarch64 --out build/cache/bundle-aarch64
 ```
 
 - 解包到 `build/cache/extract/aarch64/`；
-- 从 `bin/{smbd,smbpasswd,smbcontrol,testparm}` 出发，沿 `readelf -d` 的 `NEEDED` 递归收集库；
+- 从 `bin/{smbd,smbpasswd,smbcontrol,testparm}` 与 `libexec/samba/{samba-dcerpcd,rpcd_*}` 出发，沿 `readelf -d` 的 `NEEDED` 递归收集库；
 - 复制 `lib/samba/**` 插件树（`pdb/tdbsam.so`、`vfs/*.so` 等）；
 - 写 `MISSING.txt`。
 
@@ -193,7 +195,7 @@ cd ../..
 1. 复制模块元数据与脚本（`module.prop`、`customize.sh`、`post-fs-data.sh`、`service.sh`、`uninstall.sh`、`action.sh`）；
 2. 复制 `config/default-config.json`、`scripts/`、`webui/`；
 3. 放入 `bin/asrd`、`bin/smbctl` 与 release-bundle 的 `bin/*`；
-4. **先删除 staging 的 `lib/` 再拷贝**（`rm -rf "$STAGE/lib"; mkdir -p "$STAGE/lib"; cp -a "$RELEASE_BUNDLE/lib/." "$STAGE/lib/"`），避免出现 `lib/lib/` 嵌套；
+4. **先删除 staging 的 `lib/` 再拷贝**（`rm -rf "$STAGE/lib"; mkdir -p "$STAGE/lib"; cp -a "$RELEASE_BUNDLE/lib/." "$STAGE/lib/"`），避免出现 `lib/lib/` 嵌套；同样方式拷贝 `libexec/` 并 `chmod 0755`；
 5. 设置可执行位、统一 LF；
 6. 复制 `LICENSE`、`README.md`、`docs/third-party.md` 到模块 staging（GPL 合规）。
 

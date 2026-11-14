@@ -381,7 +381,10 @@ su -c 'logcat -d -b all | grep -iE "avc:|selinux|smbd|asrd" | tail -100'
 | `smbctl` 非 root | 必须 `su -c`；socket 只接受 uid 0 |
 | 修改配置后不生效 | WebUI 保存会按需生效；直接改文件需重启 daemon；日志级别/去抖参数需重启 |
 | 手机换 IP 后 WebUI 打不开 | 用 `smbctl url` 获取新地址；SMB 客户端也要用新 IP |
+| 出门后 SMB 变成只读或停掉 | 正常：设置了「可信 Wi-Fi」白名单。回自家 Wi-Fi 后自动恢复；`smbctl status` 的 `Network` 会显示当前 SSID 与策略 |
+| 白名单里加了 SSID 仍被放行 | 读不到 SSID 时故意放宽（fail-open），warnings 会写「读不到当前 Wi-Fi 名称」；确认 `cmd wifi status` 可用、Android 10+ |
 | 升级后异常 | 重启一次让新模块目录生效；检查 `data/lib` 是否指向新模块；看 `boot.log` |
+| 安卓客户端（MT 管理器等）挂载报 `0xC000020C` | 客户端会先连 IPC$ 枚举共享；模块缺 `libexec/samba/samba-dcerpcd` 时这一步断连，`smbd.log` 里有 `status[NT_STATUS_CONNECTION_DISCONNECTED] || at smb2_create.c:393`。升级到含 `libexec/` 的 0.1.1 并重启；只连数据共享的 `smbclient` 不受影响 |
 | 模块装不上 | 架构必须 arm64；`ksud module install` 需 `sys.boot_completed=1`；看管理器日志 |
 | 想临时停用 | `smbctl stop`（WebUI 与 asrd 仍在）或管理器中禁用模块后重启 |
 | 只想关 WebUI | `smbctl webui-stop` 只停 HTTP 监听，SMB 继续运行；`smbctl webui-start` 恢复 |
@@ -393,6 +396,7 @@ su -c 'logcat -d -b all | grep -iE "avc:|selinux|smbd|asrd" | tail -100'
 - **`smbd` monitor / Stop 并发 panic**：早期版本在停止/重启 `smbd` 时可能因关闭/等待同一个 nil channel 导致 `asrd` panic；已改为每次启动创建局部 `done` channel（`monitor(pid, done)`）。真机反复 stop/restart/kill 不再 panic。
 - **Wi-Fi 关闭时误选 `vgate0` 等隧道接口**：早期自动选择可能把 VPN/隧道当成 LAN；已把 `vgate*`、`v4-*`、`clat*` 归为 `vpn`，`auto` 永不选中。关闭 Wi-Fi 后进入 `waiting_network`，重新开启后恢复（已验证）。
 - **WebUI 对相同 bind/port 重复监听**：早期每次保存设置都会尝试重新绑定同一地址并记录 `address already in use`；最终版本 `Apply` 对相同配置 no-op，只有 `enabled/port/bind` 变化才重建。
+- **打包漏 `libexec/samba/` 导致安卓客户端挂载失败（0xC000020C）**：Samba ≥ 4.15 的 IPC$ 管道由 `samba-dcerpcd` 提供。缺该目录时 `smbd` 从 `<data>/libexec/samba` `posix_spawn` 失败；bionic 不向父进程报告 exec 失败，子进程直接退出，ready 管道得到 `EPIPE`，而 `EPIPE` 映射为 `NT_STATUS_CONNECTION_DISCONNECTED`。已在 `bundle.py`（NEEDED 闭包加入 `samba-dcerpcd`/`rpcd_*`）、`build.sh`（staging + payload 阻断校验）、`post-fs-data.sh`/`customize.sh`（`data/libexec` 符号链接）修复。
 - **构建 `lib/lib/` 嵌套**：早期构建 staging 时把库放进 `lib/lib/`；已修复并在 [build.md](build.md) §4.1 加入阻断校验。
 - **`/storage` 未解锁时误判为空挂载点可用**：早期直接 `stat`/列目录可能把空挂载点当可用存储；已改为用 `statfs` 的 FUSE magic 判断，不可用时回退 `/data/media/0`，解锁后按 storage fingerprint 重启 `smbd`。
 

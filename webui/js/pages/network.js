@@ -111,6 +111,17 @@ export async function mount(root) {
         statRow('DNS', Array.isArray(network.dns) ? network.dns.join(', ') : '', true),
         statRow('SMB 绑定接口', settings.smb && settings.smb.interface ? settings.smb.interface : '自动'),
         statRow('网络策略', netCfg.interface === 'auto' ? '自动' : netCfg.interface || '自动'),
+        statRow('Wi-Fi 名称', network.ssid || (network.wifi ? '未知' : '—'), true),
+        statRow(
+          '访问策略',
+          network.policy === 'readonly'
+            ? '只读（不在可信列表）'
+            : network.policy === 'stop'
+              ? '已停止（不在可信列表）'
+              : Array.isArray(netCfg.trusted_ssids) && netCfg.trusted_ssids.length > 0
+                ? '可信网络'
+                : '未启用白名单',
+        ),
       ),
       network.message
         ? el('p', { class: 'hint', text: network.message })

@@ -13,6 +13,21 @@ from pathlib import Path
 BUILD = Path(__file__).resolve().parent
 CACHE = BUILD / "cache"
 BINS = ["smbd", "smbpasswd", "smbcontrol", "testparm"]
+# Samba >= 4.15 serves every named pipe (IPC$: srvsvc, lsarpc, samr, winreg...)
+# from samba-dcerpcd, which smbd spawns from its compiled-in LIBEXECDIR. Without
+# it smbd cannot open any pipe: the spawn fails, the ready pipe hits EPIPE and
+# the client sees NT_STATUS_CONNECTION_DISCONNECTED (0xC000020C). Clients such
+# as MT Manager enumerate shares over srvsvc first, so the whole mount fails.
+LIBEXEC = [
+    "samba-dcerpcd",
+    "rpcd_classic",
+    "rpcd_epmapper",
+    "rpcd_fsrvp",
+    "rpcd_lsad",
+    "rpcd_mdssvc",
+    "rpcd_spoolss",
+    "rpcd_winreg",
+]
 
 
 def run(cmd, **kw):
@@ -63,7 +78,9 @@ def bundle(arch, termux, out):
     for p in (termux / "lib").rglob("*"):
         if p.is_file() or p.is_symlink():
             libmap.setdefault(p.name, p)
-    needed, seen, stack, missing = [], set(), [termux / "bin" / b for b in BINS], set()
+    seeds = [termux / "bin" / b for b in BINS]
+    seeds += [termux / "libexec" / "samba" / b for b in LIBEXEC]
+    needed, seen, stack, missing = [], set(), seeds, set()
     while stack:
         p = stack.pop()
         rp = os.path.realpath(p)
@@ -80,9 +97,12 @@ def bundle(arch, termux, out):
         shutil.rmtree(out)
     (out / "bin").mkdir(parents=True)
     (out / "lib").mkdir(parents=True)
+    (out / "libexec" / "samba").mkdir(parents=True)
     for p in needed:
-        if p.name in BINS:
+        if p.parent == termux / "bin" and p.name in BINS:
             shutil.copy2(p, out / "bin" / p.name)
+        elif p.parent == termux / "libexec" / "samba":
+            shutil.copy2(p, out / "libexec" / "samba" / p.name)
     for p in needed:
         if "/lib/" in str(p).replace("\\", "/"):
             shutil.copy2(os.path.realpath(p), out / "lib" / p.name)

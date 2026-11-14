@@ -17,6 +17,9 @@ esac
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 set_perm_recursive "$MODPATH/bin" 0 0 0755 0755
 set_perm_recursive "$MODPATH/scripts" 0 0 0755 0755
+if [ -d "$MODPATH/libexec" ]; then
+  set_perm_recursive "$MODPATH/libexec" 0 0 0755 0755
+fi
 set_perm "$MODPATH/module.prop" 0 0 0644
 set_perm "$MODPATH/customize.sh" 0 0 0755
 set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
@@ -37,9 +40,11 @@ if [ ! -f "$DATA_DIR/config/config.json" ]; then
   fi
 fi
 
-# Samba's compiled-in MODULESDIR is patched to this data directory. Keep a
-# stable symlink so Samba can load tdbsam/vfs modules from the module itself.
+# Samba's compiled-in MODULESDIR and LIBEXECDIR are both patched to this data
+# directory. Keep stable symlinks so Samba can load modules and start the
+# samba-dcerpcd named-pipe helper from the module itself.
 ln -sfn "$MODPATH/lib" "$DATA_DIR/lib"
+ln -sfn "$MODPATH/libexec" "$DATA_DIR/libexec"
 chmod 0700 "$DATA_DIR" 2>/dev/null
 
 ui_print "- Data directory: $DATA_DIR"

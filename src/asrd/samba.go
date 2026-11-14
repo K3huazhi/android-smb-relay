@@ -275,7 +275,11 @@ func (m *SambaManager) Start(iface string) error {
 		return err
 	}
 	m.console = w
-	cmd := exec.Command(m.binary("smbd"), "-D", "-s", m.confPath, "-l", m.logDir)
+	// Do not pass "-l <dir>": Samba treats it as the log basename and writes
+	// "<dir>/log.smbd", silently ignoring the absolute "log file" from
+	// smb.conf. Without it smbd honours "log file = <logs>/smbd.log", which is
+	// also the path the WebUI log viewer reads.
+	cmd := exec.Command(m.binary("smbd"), "-D", "-s", m.confPath)
 	cmd.Env = m.env()
 	cmd.Dir = m.dataDir
 	cmd.Stdout = w

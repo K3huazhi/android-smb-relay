@@ -68,8 +68,10 @@ export async function mount(root) {
   const svcPid = statRow('PID');
   const svcRestarts = statRow('看门狗重启次数');
   const svcInterface = statRow('网络接口');
+  const svcSSID = statRow('Wi-Fi 名称');
   const svcAddress = statRow('IP 地址');
   const svcPort = statRow('端口');
+  const svcMode = statRow('访问模式');
   const serviceError = el('div', {
     class: 'notice notice-error',
     role: 'alert',
@@ -103,8 +105,10 @@ export async function mount(root) {
       svcPid.row,
       svcRestarts.row,
       svcInterface.row,
+      svcSSID.row,
       svcAddress.row,
       svcPort.row,
+      svcMode.row,
     ),
     serviceError,
     el('div', { class: 'card-actions' }, startBtn, stopBtn, restartBtn),
@@ -415,6 +419,11 @@ export async function mount(root) {
     svcPid.value.textContent = smb.pid ? String(smb.pid) : '—';
     svcRestarts.value.textContent = fmtNumber(smb.restarts);
     svcInterface.value.textContent = smb.interface || '—';
+    svcSSID.value.textContent = network.ssid || (network.wifi ? '未知' : '—');
+    svcSSID.value.classList.toggle('mono', Boolean(network.ssid));
+    const policy = network.policy || 'allow';
+    svcMode.value.textContent = smb.read_only ? '只读（受保护）' : policy === 'stop' ? '已关闭' : '读写';
+    svcMode.value.classList.toggle('warn', Boolean(smb.read_only));
     svcAddress.value.textContent = smb.ip || '—';
     svcAddress.value.classList.add('mono');
     svcPort.value.textContent = smb.port ? String(smb.port) : '—';

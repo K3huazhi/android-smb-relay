@@ -76,7 +76,7 @@
 说明：
 
 - 表中 `or later` 表示“该版本或更高版本”；具体以各项目 `COPYING`/`LICENSE` 原文为准。
-- 随包实际包含的是上表的一个**子集**（由 `bundle.py` 的 NEEDED 闭包决定），并非每个包的所有文件都会进入模块。`0.1.0` 的 `lib/` 根目录有 117 个库、`lib/samba/` 有 153 个插件库。
+- 随包实际包含的是上表的一个**子集**（由 `bundle.py` 的 NEEDED 闭包决定），并非每个包的所有文件都会进入模块。`0.1.1` 的 `lib/` 根目录有 124 个库、`lib/samba/` 有 153 个插件库；另有 `libexec/samba/` 下 8 个命名管道服务（`samba-dcerpcd` + `rpcd_*`），同样来自 Termux `samba` 包。
 - Android 系统库 `libc.so`、`libdl.so`、`libm.so` 由设备提供，不随包分发（`MISSING.txt` 中仅允许这三项）。
 - GPL/LGPL 组件的源码通过其上游项目与 Termux 构建配方提供；宽松许可证组件的许可证文本随上游源码提供。
 

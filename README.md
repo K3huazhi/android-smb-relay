@@ -4,7 +4,7 @@
 
 > **当前默认是匿名 SMB + 整个内部存储可读写。** 这是按使用者要求提供的“局域网直接连接”模式：同一局域网内任何人都可以在不输入账号密码的情况下读写 `/storage/emulated/0`。**请只在可信局域网使用**，详见 [安全说明](#9-安全说明)。WebUI 默认不启用登录认证。
 
-- 版本：0.1.0
+- 版本：0.1.3
 - 已验证：OnePlus PJA110 / Android 16 (API 36) / arm64-v8a / KernelSU 3.3.1 / SELinux Enforcing
 - 未验证：Android 15、Android 17、Magisk、其他机型、热点/VPN 实际转发、完整卸载/重装等；详见 [兼容性](#10-兼容性)
 
@@ -75,14 +75,15 @@ smb://192.168.1.223/Internal
 
 ### 3.1 KernelSU
 
-1. 下载 [releases/android-smb-relay-0.1.0.zip](releases/android-smb-relay-0.1.0.zip)。
+1. 下载 [releases/android-smb-relay-0.1.3.zip](releases/android-smb-relay-0.1.3.zip)。
 2. KernelSU Manager → 模块 → 从本地安装 → 选择 zip。
 3. 重启手机。
+4. 重启后打开 KernelSU 管理器 → 模块 → Android SMB Relay，点 **WebUI** 就能进管理界面（不用记 IP）。
 
 或命令行：
 
 ```sh
-su -c 'ksud module install /sdcard/Download/android-smb-relay-0.1.0.zip'
+su -c 'ksud module install /sdcard/Download/android-smb-relay-0.1.3.zip'
 ```
 
 ### 3.2 Magisk
@@ -109,7 +110,10 @@ su -c 'cat /data/adb/android-smb-relay/config/initial-credentials.txt'
 
 ## 4. WebUI
 
-浏览器打开 `http://<手机IP>:8080`，默认没有登录密码，局域网内直接进入 WebUI。
+两种入口，内容相同（都是 `asrd` 提供的同一个管理界面）：
+
+1. **KernelSU 内直接打开（推荐）**：KernelSU 管理器 → 模块 → Android SMB Relay → **WebUI**。模块的 `webroot/index.html` 是一个启动页，会用 root shell 判断 `asrd` 是否在跑，正常就直接跳进完整 WebUI；没在跑时给出“启动服务/启动 WebUI”按钮，不用回浏览器输地址。
+2. **浏览器**：打开 `http://<手机IP>:8080`，默认没有登录密码，局域网内直接进入 WebUI。
 
 | 页面 | 内容 |
 | --- | --- |
@@ -118,7 +122,7 @@ su -c 'cat /data/adb/android-smb-relay/config/initial-credentials.txt'
 | Users | 可选的 SMB 账号（默认空）；启用口令认证后才需要 |
 | Network | 接口、IPv4/IPv6、网关、MAC、自动/手动选口 |
 | **Connect** | `\\IP\Internal`、WebUI 地址、Windows/Linux/macOS/Android 连接步骤、挂载脚本下载 |
-| Settings | SMB 端口/协议/签名/加密/Guest/匿名/接口、WebUI、Startup、Storage、Log |
+| Settings | SMB 端口/协议/签名/加密/Guest/匿名/接口、**可信 Wi-Fi**、WebUI、Startup、Storage、Log |
 | Logs | asrd/smbd/console 日志、级别过滤 |
 
 Shared 地址和 Guest 状态来自后端真实状态；不是前端拼的假数据。
@@ -233,6 +237,8 @@ su -c '/data/adb/modules/android-smb-relay/bin/smbctl webui-passwd'
 /data/adb/modules/android-smb-relay/   模块（升级时整体替换）
 ├── bin/         asrd, smbd, smbpasswd, smbcontrol, testparm, smbctl
 ├── lib/         Samba 运行库与插件
+├── libexec/     samba-dcerpcd 与 rpcd_*（IPC$ 命名管道服务，缺了它安卓客户端挂载会报 0xC000020C）
+├── webroot/     KernelSU 模块页入口（index.html：判断状态后跳转完整 WebUI）
 ├── scripts/     start/stop/restart/status/network/watchdog
 ├── webui/       静态 WebUI + downloads 挂载脚本
 ├── config/      默认配置
@@ -261,7 +267,7 @@ su -c '/data/adb/modules/android-smb-relay/bin/smbctl webui-passwd'
 
 ```sh
 bash build/build.sh
-# 输出 releases/android-smb-relay-0.1.0.zip
+# 输出 releases/android-smb-relay-0.1.3.zip
 ```
 
 构建内容：
@@ -285,6 +291,7 @@ bash build/build.sh
 - SMB 签名默认不强制（`server signing = default`），Windows 11 24H2 客户端会按自己的策略签名；未签名流量仍有被中间人篡改/重放的风险，需要更高安全性可改为“强制”。
 - WebUI 默认无登录密码；不要把 WebUI 暴露到公网。
 - 不要在不信任的 Wi-Fi（咖啡厅、酒店、公司访客网络）开启。
+- **可信 Wi-Fi 白名单**（Settings → 可信网络）：填入自家 SSID 后，离开这些网络时自动降级——默认「只读」，也可选「停止 SMB」。判定读不到 SSID 时按可信处理并在警告里提示；有线/USB 连接不参与判定。
 - 建议只在家用/隔离 LAN 使用；不用时在 WebUI 关闭 SMB 或改只读。
 - 若改回认证模式：在 Settings 关闭 Guest/匿名，在 Users 创建账号，客户端用 `smbclient -U user` / Windows 凭据。
 
@@ -315,6 +322,7 @@ bash build/build.sh
 | 现象 | 处理 |
 | --- | --- |
 | WebUI 打不开 | 确认手机 IP、8080 端口、WebUI 未关闭；`smbctl status` |
+| 安卓客户端挂载报 `SMB2_CREATE ... 0xC000020C` | 0.1.0 的打包漏了 `libexec/samba/samba-dcerpcd`，客户端枚举共享（IPC$/srvsvc）就会断连；升级到 0.1.1 重装并重启 |
 | 445 被占用 | 关闭其他 SMB/Samba；改 `smb.port`（Windows 需 445 才能直接 `\\IP`） |
 | Windows 拒绝匿名 | 管理员运行 `tools/windows-allow-guest.ps1`，再访问 |
 | Windows 提示凭据 | 清除旧连接 `net use * /delete /y`，再打开 `\\IP\Internal` |
