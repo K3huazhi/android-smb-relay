@@ -131,6 +131,24 @@ Shared 地址和 Guest 状态来自后端真实状态；不是前端拼的假数
 
 ## 5. 客户端访问
 
+### 5.1 Windows 一键连接（推荐）
+
+下载仓库 `tools/` 下的这三个文件到同一目录，双击 `windows-oneclick.cmd`，只输入手机 IP：
+
+```text
+Phone IP: 192.168.1.223
+```
+
+脚本会自动：
+
+1. 请求 UAC，开启 Windows 来宾 SMB（`AllowInsecureGuestAuth=1`），并尝试关闭客户端签名要求；
+2. 尝试匿名挂载 `\\<IP>\Internal`；
+3. 如果 Windows 11 24H2 Pro/Enterprise 拒绝 guest（微软已移除 guest 回退），
+   自动通过手机 WebUI 创建/使用 `android` / `admin` 账号并映射到 `Z:`；
+4. 不修改手机端的共享配置，不需要手动输入密码。
+
+> **Windows 11 24H2 Pro/Enterprise 已从 SMB 客户端移除匿名 guest 回退**，仅靠注册表无法真正恢复匿名；脚本会先按匿名策略尝试，失败后用 `android/admin` 账号完成连接。Windows 11 Home 或更旧版本可按匿名路径连接。
+
 ### 5.1 Windows（推荐）
 
 直接打开资源管理器，地址栏输入：

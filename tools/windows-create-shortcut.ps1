@@ -12,8 +12,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$target = Join-Path $root "windows-connect.cmd"
-if (-not (Test-Path $target)) { throw "windows-connect.cmd not found next to this script: $target" }
+$target = Join-Path $root "windows-oneclick.cmd"
+if (-not (Test-Path $target)) { throw "windows-oneclick.cmd not found next to this script: $target" }
 
 $desktop = [Environment]::GetFolderPath("Desktop")
 $linkPath = Join-Path $desktop "$Name.lnk"
